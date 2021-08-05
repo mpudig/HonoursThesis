@@ -11,7 +11,7 @@ z_b = 1000.0 # Depth of thermocline
 
 mu = 1/(20 * 365 * 86400) # Deep ocean restoring time scale
 gamma = 1/(1.5 * 365 * 86400) # Surface restoring time scale (to be determined through my least squares regression)
-kappa = 7e-6
+kappa = 7e-6 # Diffusivity
 
 T_0 = 22.0 # Top temperature for initial condition
 T_b = 5.0 # Bottom temperature for initial condition (this warms up a bit during runs because of the no-flux at bottom condition)
@@ -122,7 +122,7 @@ def OHC(T):
 
 
 
-### The forward-in-time, central-in-space scheme with restoring and flux boundary conditions
+### The forward-in-time, central-in-space scheme with restoring and flux boundary conditions ###
 
 def model(dt, dz, z_m, z_d, z_b, kappa, gamma, T_initial, Q, T0, years):
     
@@ -146,7 +146,6 @@ def model(dt, dz, z_m, z_d, z_b, kappa, gamma, T_initial, Q, T0, years):
     F = np.zeros((M + 1, N + 1)) # i.e. evaluated at the top/bottom of grid cell
     
     T[:, 0] = T_initial # Initial condition
-    #T[-1, :] = T_bot
     F[0, :] = 0 # No flux at surface
     F[- 1, :] = 0 # No flux at base
         
@@ -157,14 +156,11 @@ def model(dt, dz, z_m, z_d, z_b, kappa, gamma, T_initial, Q, T0, years):
             
             F[m, n] = kappa / dz * (T[m - 1, n] - T[m, n])
             
-        for m in range(0, M): # NB: Needs to go to M - 1 if setting the temperature at the base.
+        for m in range(0, M):
              
             T[m, n + 1] = T[m, n] + dt / dz * (F[m, n] - F[m + 1, n]) \
             + dt * (radiative_forcing[n] - gamma * (T[m, n] - (T0[n] + T[m, 0]))) * Hmix[m]  \
-            - dt * mu * (T[m, n] - T[m, 0]) * Hdeep[m] 
-            # NB: "+ w" since z is positive downwards, this is an upwelling velocity, implying that it would have been negative on the LHS
-            #  + w * dt * (- F[m + 1, n] / kappa) \
-
+            - dt * mu * (T[m, n] - T[m, 0]) * Hdeep[m]
             
         #Convective adjustment step
     
