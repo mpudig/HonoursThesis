@@ -74,7 +74,7 @@ def steady_state(Z):
     + np.sqrt(kappa / mu) * (T_0 - T_b) / (z_m - z_b) * np.exp((z_b - Z) * np.sqrt(mu / kappa))
 
 
-def convective_adjustment(T):
+def convective_adjustment(T, z_m):
     
     # The logic of this loop is predicated on there being always being mixing layer.
     
@@ -121,24 +121,28 @@ def OHC(T):
     return OHC
 
 
-
 ### The forward-in-time, central-in-space scheme with restoring and flux boundary conditions ###
 
 def model(dt, dz, z_m, z_d, z_b, kappa, gamma, T_initial, Q, T0, years):
     
     # Data
     
-    radiative_forcing = Q / (c * rho * z_m)
-    
     days = dt / 86400 # Timestep in days
     M = int(z_b / dz) # Number of spatial steps evaluated at the top/bottom of the grid cell
     N = int(years * 360 / days) # Number of timesteps in days (taking 1 year = 360 days)
     z = np.linspace(0.0, z_b, M + 1) # Depth at top/bottom of grid cell
-    z_t = (z[1:] + z[:-1]) / 2 # Depth at the middle of grid cell 
-    t = np.linspace(0.0, years * 360, N + 1)
-    
-    Hmix = np.heaviside(z_m - z, 0) # 1 above z = z_m, zero elsewhere
     Hdeep = np.heaviside(z - z_d, 1) # 1 below z = z_d, zero elsewhere
+    radiative_forcing = Q / (c * rho * z_m)
+    
+    # Paramaterises how the MLD shaols
+    
+    q = Q[1] # set to the positive 2.0, or whatever the Q_optimal is, later. cf. optimise_one_dim_model
+    dQ = np.diff(Q) # proportional to dQ/dt 
+    dzm_optimal = - z_m * 0.05 # shoals by 5% of whatever original z_m was
+    if q == 0:
+        dzm = dQ * q
+    else:
+        dzm = dQ / q * dzm_optimal
     
     # Temperature and flux matrices. Prescribe initial and boundary conditions
     
@@ -148,9 +152,11 @@ def model(dt, dz, z_m, z_d, z_b, kappa, gamma, T_initial, Q, T0, years):
     T[:, 0] = T_initial # Initial condition
     F[0, :] = 0 # No flux at surface
     F[- 1, :] = 0 # No flux at base
-        
-        
+    
+    k = 1 # proportionality counter for how much MLD shoals; is multipled by gamma and z_m wherever they occur.
     for n in range(0, N):
+        
+        k = k + dzm[n] / z_m
         
         for m in range(1, M):
             
@@ -158,12 +164,13 @@ def model(dt, dz, z_m, z_d, z_b, kappa, gamma, T_initial, Q, T0, years):
             
         for m in range(0, M):
              
-            T[m, n + 1] = T[m, n] + dt / dz * (F[m, n] - F[m + 1, n]) \
-            + dt * (radiative_forcing[n] - gamma * (T[m, n] - (T0[n] + T[m, 0]))) * Hmix[m]  \
+            T[m, n + 1] = T[m, n] \
+            + dt / dz * (F[m, n] - F[m + 1, n]) \
+            + dt * (radiative_forcing[n + 1] - k * gamma * (T[m, n] - (T0[n + 1] + T[m, 0]))) * np.heaviside(k * z_m - z_t, 0)[m] \
             - dt * mu * (T[m, n] - T[m, 0]) * Hdeep[m]
             
         #Convective adjustment step
     
-        convective_adjustment(T[:, n + 1])
+        convective_adjustment(T[:, n + 1], k * z_m)
         
     return T
